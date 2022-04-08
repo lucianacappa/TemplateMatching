@@ -8,6 +8,12 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
+## Execution
+Example executions:
+```powershell
+flann2.py -b base.jpg -q template*.jpg
+```
+
 ## TODO
 * Improve matching of scarcely featured query images.
 * Improve readability of code.
