@@ -4,8 +4,21 @@ import glob
 import numpy
 
 FLANN_KD = 2
-MATCH_RATIO_THRESHOLD = 0.8
+KEY_BOTTOM_ARROW = 0x10000 * 0x28
+KEY_ESC = 0x1B
+KEY_LEFT_ARROW = 0x10000 * 0x25
+KEY_PG_DOWN = 0x10000 * 0x22
+KEY_PG_UP = 0x10000 * 0x21
+KEY_RIGHT_ARROW = 0x10000 * 0x27
+KEY_SPACE = 0x20
+KEY_UP_ARROW = 0x10000 * 0x26
+MATCH_RATIO_THRESHOLD = 0.5
 MIN_IMAGE_DIMENSION = 10
+MIN_MATCHES = 20
+SCALE_MAX = 5.0
+SCALE_MIN = 0.2
+WIN_WIDTH = 800
+WIN_HEIGHT = 600
 
 
 def check_image(name: str, image: numpy.ndarray):
@@ -25,6 +38,21 @@ def check_key_points_and_descriptors(images: dict):
             raise Exception(f'{name} image only has {len(data["key_points"])} key-points')
 
 
+def compute_and_store_matches(args: dict, images: dict):
+    flann = cv2.FlannBasedMatcher_create()
+    for index in range(len(args['query'])):
+        query_name = f'query{index}'
+        images[query_name]['matches'] = flann.knnMatch(images['base']['descriptors'],
+                                                       images[query_name]['descriptors'], k=FLANN_KD)
+        images[query_name]['filtered_matches'] = filter_matches(images[query_name]['matches'])
+        images[query_name]['matches_image'] = plot_matches_and_outline(images, query_name,
+                                                                       sorted(images[query_name]['matches'],
+                                                                              key=lambda m: m[0].distance)[:MIN_MATCHES]
+                                                                       if len(images[query_name][
+                                                                                  'filtered_matches']) < MIN_MATCHES
+                                                                       else images[query_name]['filtered_matches'])
+
+
 def create_flann_matcher():
     index_params = dict(algorithm=cv2.DESCRIPTOR_MATCHER_FLANNBASED, trees=100)
     search_params = dict(checks=500)
@@ -39,7 +67,7 @@ def detect_and_store_features(images):
     detector = create_detector()
     for img_name in images:
         # TODO: second argument to detectAndCompute is the mask... might be worth trying later.
-        images[img_name]['key_points'], images[img_name]['descriptors'] =\
+        images[img_name]['key_points'], images[img_name]['descriptors'] = \
             detector.detectAndCompute(images[img_name]['image'], None)
 
 
@@ -83,16 +111,43 @@ def main():
     check_images(images)
     detect_and_store_features(images)
     check_key_points_and_descriptors(images)
-    flann = cv2.FlannBasedMatcher_create()
-    for i in range(len(args['query'])):
-        query_name = f'query{i}'
-        matches = flann.knnMatch(images['base']['descriptors'], images[query_name]['descriptors'], k=FLANN_KD)
-        filtered_matches = filter_matches(matches)
-        show_matches_and_outline(images, query_name, filtered_matches)
+    compute_and_store_matches(args, images)
+    show_flann_matches_and_outlines(images, list(range(len(args['query']))), initial_scale=0.5)
 
 
 def match_to_string(match: cv2.DMatch):
     return f'{{i={match.imgIdx}, q={match.queryIdx}, t={match.trainIdx}, d={match.distance}}}'
+
+
+def on_mouse(event: int, x: int, y: int, flag: int, userdata):
+    if flag & cv2.EVENT_FLAG_LBUTTON:
+        if 'drag_from' in userdata:
+            userdata['center'] = {
+                'x': userdata['center']['x'] + userdata['drag_from']['x'] - x,
+                'y': userdata['center']['y'] + userdata['drag_from']['y'] - y
+            }
+        userdata['drag_from'] = {'x': x, 'y': y}
+        print(f'>>>>> on mouse: event={event}, x={x}, y={y}, flag={flag}, userdata={userdata}')
+    elif ('drag_from' in userdata) and (not flag & cv2.EVENT_FLAG_LBUTTON):
+        del userdata['drag_from']
+        print(f'>>>>> on mouse: event={event}, x={x}, y={y}, flag={flag}, userdata={userdata}')
+    elif event == cv2.EVENT_MOUSEWHEEL:
+        _, _, w, h = cv2.getWindowImageRect('matches')
+        scale = userdata['scale']
+        new_scale = scale
+        if flag > 0 and scale < SCALE_MAX:
+            new_scale = scale + 0.1
+        elif userdata['scale'] > SCALE_MIN:
+            new_scale = scale - 0.1
+        userdata['scale'] = new_scale
+        cx, cy = userdata['center']['x'], userdata['center']['y']
+        tr_cx, tr_cy = int(cx * new_scale / scale), int(cy * new_scale / scale)
+        if new_scale > scale:
+            delta_x = (x - w // 2) * (1 - new_scale / scale)
+            delta_y = (y - h // 2) * (1 - new_scale / scale)
+            # userdata['center'] = {'x': cx + x - w // 2, 'y': cy + y - h // 2}
+            userdata['center'] = {'x': tr_cx + delta_x, 'y': tr_cy + delta_y}  # XXX: FIX
+        print(f'>>>>> on mouse: event={event}, x={x}, y={y}, flag={flag}, userdata={userdata}')
 
 
 def plot_matches(images: dict, query_name: str, matches: list[list[cv2.DMatch]]):
@@ -112,14 +167,14 @@ def plot_matches_and_outline(images: dict, query_name: str, matches: list[list[c
         src_pts = numpy.float32([images[query_name]['key_points'][m[0].trainIdx].pt for m in matches]).reshape(-1, 1, 2)
         dst_pts = numpy.float32([images['base']['key_points'][m[0].queryIdx].pt for m in matches]).reshape(-1, 1, 2)
         t_matrix, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-        # matches_mask = mask.ravel().tolist()  # ???
         h, w = images[query_name]['image'].shape[:2]
         pts = numpy.float32([[0, 0], [0, h - 1], [w - 1, h - 1], [w - 1, 0]]).reshape(-1, 1, 2)
         dst = cv2.perspectiveTransform(pts, t_matrix)
         matches_image = plot_matches(images, query_name, matches)
-        return cv2.polylines(matches_image, [numpy.int32(dst)], True, (0, 0, 255), 3, cv2.LINE_AA)  # Red outline
+        result_image = cv2.polylines(matches_image, [numpy.int32(dst)], True, (0, 0, 255), 3, cv2.LINE_AA)
     except:
-        return plot_matches(images, query_name, matches)
+        result_image = plot_matches(images, query_name, matches)
+    return result_image
 
 
 def print_matches(matches: list[list[cv2.DMatch]]):
@@ -128,28 +183,71 @@ def print_matches(matches: list[list[cv2.DMatch]]):
         print('    pair:', ' <==> '.join([match_to_string(match) for match in match_pair]))
 
 
+def show_flann_matches_and_outlines(images: dict, indexes: list[int], initial_scale: float = 1.0):
+    quitting = False
+    i = 0
+    view_params = {'scale': initial_scale}
+    cv2.namedWindow('matches', cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('matches', WIN_WIDTH, WIN_HEIGHT)
+    # cv2.namedWindow('matches', cv2.WINDOW_AUTOSIZE)
+    cv2.setMouseCallback('matches', on_mouse, view_params)
+    print('Available keys:\n'
+          '    cycling queries: Arrows, PgUp/Down, Space\n'
+          '    quitting: Q/q, Esc.')
+    while not quitting:
+        index = indexes[i]
+        query_name = f'query{index}'
+        image = images[query_name]['matches_image']
+        if view_params is not None and view_params != 1.0:
+            image = cv2.resize(image, (0, 0), fx=view_params['scale'], fy=view_params['scale'])
+        h, w = image.shape[:2]
+        view_params['img_dimensions'] = {'height': h, 'width': w}
+        if 'center' not in view_params:
+            view_params['center'] = {'x': w // 2, 'y': h // 2}
+        # Fix center:
+        _, _, win_width, win_height = cv2.getWindowImageRect('matches')[:4]
+        cx, cy = view_params['center']['x'], view_params['center']['y']
+        if w - cx < win_width // 2:
+            view_params['center']['x'] = w - win_width // 2
+        elif cx < win_width // 2:
+            view_params['center']['x'] = win_width // 2
+        elif h - cy < win_height // 2:
+            view_params['center']['y'] = h - win_height // 2
+        elif cy < win_height // 2:
+            view_params['center']['y'] = win_height // 2
+        cx, cy = view_params['center']['x'], view_params['center']['y']
+        top = int(max(cy - win_height // 2, 0))
+        bottom = int(min(cy + win_height // 2, h - 1))
+        left = int(max(cx - win_width // 2, 0))
+        right = int(min(cx + win_width // 2, w - 1))
+        # print(f'cropping: center=({cx}, {cy}), borders={{({left}, {top}), ({right}, {bottom})}}, window={win_width}x{win_height}')
+        image = image[top:bottom, left:right]
+        win_image = numpy.zeros((win_height, win_width, 3), numpy.uint8)
+        win_image[0:image.shape[0], 0:image.shape[1]] = image
+        cv2.imshow('matches', win_image)
+        cv2.setWindowTitle('matches', f'{images["base"]["filename"]} <-- {images[query_name]["filename"]}')
+        key = cv2.waitKeyEx(1)  # TODO: There has to be a better and more performant way
+        if key in [KEY_LEFT_ARROW, KEY_PG_UP, KEY_UP_ARROW]:
+            i = (i - 1) % len(indexes)
+            del view_params['center']
+            view_params['scale'] = initial_scale
+        elif key in [KEY_BOTTOM_ARROW, KEY_PG_DOWN, KEY_RIGHT_ARROW, KEY_SPACE]:
+            i = (i + 1) % len(indexes)
+            del view_params['center']
+            view_params['scale'] = initial_scale
+        elif key in [KEY_ESC, ord('Q'), ord('q')]:
+            quitting = True
+        elif key >= 0:
+            print('invalid key pressed:', key)
+    cv2.destroyWindow('matches')
+
+
 def show_image(name: str, image: numpy.ndarray, scale: float = 1.0):
     if scale != 1.0:
         image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
     cv2.imshow(name, image)
-    cv2.waitKey(0)
+    cv2.waitKeyEx(0)
     cv2.destroyWindow(name)
-
-
-def show_matches(images: dict, query_name: str, matches: list[list[cv2.DMatch]]):
-    show_image(
-        f'Matches for {images[query_name]["filename"]} on {images["base"]["filename"]}',
-        plot_matches(images, query_name, matches),
-        scale=0.5
-    )
-
-
-def show_matches_and_outline(images: dict, query_name: str, matches: list[list[cv2.DMatch]]):
-    show_image(
-        f'Matches for {images[query_name]["filename"]} on {images["base"]["filename"]}',
-        plot_matches_and_outline(images, query_name, matches),
-        scale=0.5
-    )
 
 
 if __name__ == '__main__':
