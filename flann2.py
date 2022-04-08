@@ -2,6 +2,8 @@ import argparse
 import cv2
 import glob
 import numpy
+import sys
+import traceback
 
 FLANN_KD = 2
 KEY_BOTTOM_ARROW = 0x10000 * 0x28
@@ -17,12 +19,14 @@ MIN_IMAGE_DIMENSION = 10
 MIN_MATCHES = 20
 SCALE_MAX = 5.0
 SCALE_MIN = 0.2
-WIN_WIDTH = 800
 WIN_HEIGHT = 600
+WIN_NAME_CONTROLS = 'controls'
+WIN_NAME_MATCHES = 'matches'
+WIN_WIDTH = 800
 
 
 def check_image(name: str, image: numpy.ndarray):
-    h, w = image.shape
+    h, w = image.shape[:2]
     if h < MIN_IMAGE_DIMENSION or w < MIN_IMAGE_DIMENSION:
         raise Exception(f'{name} image is empty')
 
@@ -33,24 +37,39 @@ def check_images(images: dict):
 
 
 def check_key_points_and_descriptors(images: dict):
-    for name, data in images.items():
-        if len(data['key_points']) < 2:
-            raise Exception(f'{name} image only has {len(data["key_points"])} key-points')
+    pass
+    # for name, data in images.items():
+    #     if len(data['key_points']) < 1:
+    #         raise Exception(f'{data["filename"]} image only has {len(data["key_points"])} key-points')
 
 
 def compute_and_store_matches(args: dict, images: dict):
     flann = cv2.FlannBasedMatcher_create()
     for index in range(len(args['query'])):
         query_name = f'query{index}'
-        images[query_name]['matches'] = flann.knnMatch(images['base']['descriptors'],
-                                                       images[query_name]['descriptors'], k=FLANN_KD)
-        images[query_name]['filtered_matches'] = filter_matches(images[query_name]['matches'])
-        images[query_name]['matches_image'] = plot_matches_and_outline(images, query_name,
-                                                                       sorted(images[query_name]['matches'],
-                                                                              key=lambda m: m[0].distance)[:MIN_MATCHES]
-                                                                       if len(images[query_name][
-                                                                                  'filtered_matches']) < MIN_MATCHES
-                                                                       else images[query_name]['filtered_matches'])
+        images[query_name]['matches'] = []
+        images[query_name]['filtered_matches'] = []
+        try:
+            images[query_name]['matches'] = flann.knnMatch(images['base']['descriptors'],
+                                                           images[query_name]['descriptors'], k=FLANN_KD) \
+                if len(images[query_name]['key_points']) > 1 else []
+            images[query_name]['filtered_matches'] = filter_matches(images[query_name]['matches'])
+            images[query_name]['matches_image'] = plot_matches_and_outline(images, query_name,
+                                                                           sorted(images[query_name]['matches'],
+                                                                                  key=lambda m: m[0].distance)[
+                                                                           :MIN_MATCHES]
+                                                                           if len(images[query_name][
+                                                                                      'filtered_matches']) < MIN_MATCHES
+                                                                           else images[query_name]['filtered_matches'])
+        except:
+            print_traceback(sys.exc_info())
+            base_image = images['base']['image']
+            query_image = images[query_name]['image']
+            bh, bw = base_image.shape[:2]
+            qh, qw = query_image.shape[:2]
+            images[query_name]['matches_image'] = numpy.zeros((max(bh, qh), bw + qw, 3), numpy.uint8)
+            # images[query_name]['matches_image'][0:bh, 0:bw] = base_image[0:bh, 0:bw]
+            # images[query_name]['matches_image'][0:qh, bw:bw + qw] = query_image[0:qh, 0:qw]
 
 
 def create_flann_matcher():
@@ -60,7 +79,9 @@ def create_flann_matcher():
 
 
 def create_detector():
+    # return cv2.ORB_create()  # TODO: play around with arguments to ORB
     return cv2.SIFT_create()  # TODO: play around with arguments to SIFT
+    # return cv2.SURF_create()  # TODO: play around with arguments to SURF
 
 
 def detect_and_store_features(images):
@@ -94,12 +115,16 @@ def get_args():
 
 def load_images(args):
     images = {
-        'base': {'filename': args['base'], 'image': cv2.imread(args['base'], cv2.IMREAD_GRAYSCALE)},
+        'base': {
+            'filename': args['base'],
+            'image': cv2.imread(args['base'], cv2.IMREAD_COLOR),
+            'full_image': cv2.imread(args['base'], cv2.IMREAD_COLOR),
+        },
     }
     for i, query in enumerate(args['query']):
         images[f'query{i}'] = {
             'filename': str(query),
-            'image': cv2.imread(query, cv2.IMREAD_GRAYSCALE),
+            'image': cv2.imread(query, cv2.IMREAD_COLOR),
             'full_image': cv2.imread(query, cv2.IMREAD_COLOR)
         }
     return images
@@ -132,7 +157,7 @@ def on_mouse(event: int, x: int, y: int, flag: int, userdata):
         del userdata['drag_from']
         print(f'>>>>> on mouse: event={event}, x={x}, y={y}, flag={flag}, userdata={userdata}')
     elif event == cv2.EVENT_MOUSEWHEEL:
-        _, _, w, h = cv2.getWindowImageRect('matches')
+        _, _, w, h = cv2.getWindowImageRect(WIN_NAME_MATCHES)
         scale = userdata['scale']
         new_scale = scale
         if flag > 0 and scale < SCALE_MAX:
@@ -183,17 +208,42 @@ def print_matches(matches: list[list[cv2.DMatch]]):
         print('    pair:', ' <==> '.join([match_to_string(match) for match in match_pair]))
 
 
+def print_traceback(exc_info):
+    exc_type, exc_value, exc_traceback = exc_info
+    print("*** print_tb:")
+    traceback.print_tb(exc_traceback, limit=1, file=sys.stdout)
+    print("*** print_exception:")
+    # exc_type below is ignored on 3.5 and later
+    traceback.print_exception(exc_type, exc_value, exc_traceback, limit=2, file=sys.stdout)
+    print("*** print_exc:")
+    traceback.print_exc(limit=2, file=sys.stdout)
+    print("*** format_exc, first and last line:")
+    formatted_lines = traceback.format_exc().splitlines()
+    print(formatted_lines[0])
+    print(formatted_lines[-1])
+    print("*** format_exception:")
+    # exc_type below is ignored on 3.5 and later
+    print(repr(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+    print("*** extract_tb:")
+    print(repr(traceback.extract_tb(exc_traceback)))
+    print("*** format_tb:")
+    print(repr(traceback.format_tb(exc_traceback)))
+    print("*** tb_lineno:", exc_traceback.tb_lineno)
+
+
 def show_flann_matches_and_outlines(images: dict, indexes: list[int], initial_scale: float = 1.0):
     quitting = False
     i = 0
     view_params = {'scale': initial_scale}
-    cv2.namedWindow('matches', cv2.WINDOW_NORMAL)
-    cv2.resizeWindow('matches', WIN_WIDTH, WIN_HEIGHT)
-    # cv2.namedWindow('matches', cv2.WINDOW_AUTOSIZE)
-    cv2.setMouseCallback('matches', on_mouse, view_params)
-    print('Available keys:\n'
+    cv2.namedWindow(WIN_NAME_MATCHES, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(WIN_NAME_MATCHES, WIN_WIDTH, WIN_HEIGHT)
+    # cv2.namedWindow(WIN_NAME_MATCHES, cv2.WINDOW_AUTOSIZE)
+    cv2.setMouseCallback(WIN_NAME_MATCHES, on_mouse, view_params)
+    print('Available controls:\n'
           '    cycling queries: Arrows, PgUp/Down, Space\n'
-          '    quitting: Q/q, Esc.')
+          '    quitting: Q/q, Esc.\n'
+          '    zoom-in/out: Mouse Wheel\n'
+          '    repositioning: Mouse Drag\n')
     while not quitting:
         index = indexes[i]
         query_name = f'query{index}'
@@ -205,7 +255,7 @@ def show_flann_matches_and_outlines(images: dict, indexes: list[int], initial_sc
         if 'center' not in view_params:
             view_params['center'] = {'x': w // 2, 'y': h // 2}
         # Fix center:
-        _, _, win_width, win_height = cv2.getWindowImageRect('matches')[:4]
+        _, _, win_width, win_height = cv2.getWindowImageRect(WIN_NAME_MATCHES)[:4]
         cx, cy = view_params['center']['x'], view_params['center']['y']
         if w - cx < win_width // 2:
             view_params['center']['x'] = w - win_width // 2
@@ -224,8 +274,8 @@ def show_flann_matches_and_outlines(images: dict, indexes: list[int], initial_sc
         image = image[top:bottom, left:right]
         win_image = numpy.zeros((win_height, win_width, 3), numpy.uint8)
         win_image[0:image.shape[0], 0:image.shape[1]] = image
-        cv2.imshow('matches', win_image)
-        cv2.setWindowTitle('matches', f'{images["base"]["filename"]} <-- {images[query_name]["filename"]}')
+        cv2.imshow(WIN_NAME_MATCHES, win_image)
+        cv2.setWindowTitle(WIN_NAME_MATCHES, f'{images["base"]["filename"]} <-- {images[query_name]["filename"]}')
         key = cv2.waitKeyEx(1)  # TODO: There has to be a better and more performant way
         if key in [KEY_LEFT_ARROW, KEY_PG_UP, KEY_UP_ARROW]:
             i = (i - 1) % len(indexes)
@@ -239,7 +289,7 @@ def show_flann_matches_and_outlines(images: dict, indexes: list[int], initial_sc
             quitting = True
         elif key >= 0:
             print('invalid key pressed:', key)
-    cv2.destroyWindow('matches')
+    cv2.destroyWindow(WIN_NAME_MATCHES)
 
 
 def show_image(name: str, image: numpy.ndarray, scale: float = 1.0):
