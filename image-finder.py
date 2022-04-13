@@ -99,7 +99,7 @@ def run_plots(plot_window, controls_window, base, query, query_index_ref, settin
             last_params = settings_ref['current'].copy()
             last_window_dimensions = plot_window.get_window_dimensions()
             a_query = query[last_index]
-            plotted = plot(base['image'], a_query['image'], **settings_ref['current'])
+            plotted = plot(base['image'], a_query['image'], **last_params)
             controls_window.record_last_duration(plotted['duration'])
             plot_window.set_plot_image(plotted['image'], f'{base["filename"]} <-- {a_query["filename"]}')
         elif last_window_dimensions != plot_window.get_window_dimensions():
