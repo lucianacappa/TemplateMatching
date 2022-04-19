@@ -1,0 +1,20 @@
+base: 'base.jpg'
+query:
+    - 'template*.jpg'
+scale: 0.5
+win_size: (800, 600)
+algorithms:
+    FLANN+ORB:
+        algorithm: 'FLANN+ORB'
+        match_ratio_threshold: 0.5
+        n_matches: 10
+    FLANN+SIFT:
+        algorithm: 'FLANN+SIFT'
+        match_ratio_threshold: 0.5
+        n_matches: 10
+    MatchTemplate:
+        algorithm: 'MatchTemplate'
+        method: 'TM_SQDIFF_NORMED'
+        filter_by: 'number'
+        match_ratio_threshold: 0.5
+        n_matches: 1

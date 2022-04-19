@@ -16,7 +16,7 @@ KEY_SPACE = 0x20
 KEY_UP_ARROW = 0x10000 * 0x26
 MATCH_RATIO_THRESHOLD = 0.5
 MIN_IMAGE_DIMENSION = 10
-MIN_MATCHES = 20
+N_MATCHES = 20
 SCALE_MAX = 5.0
 SCALE_MIN = 0.2
 WIN_HEIGHT = 600
@@ -57,9 +57,9 @@ def compute_and_store_matches(args: dict, images: dict):
             images[query_name]['matches_image'] = plot_matches_and_outline(images, query_name,
                                                                            sorted(images[query_name]['matches'],
                                                                                   key=lambda m: m[0].distance)[
-                                                                           :MIN_MATCHES]
+                                                                           :N_MATCHES]
                                                                            if len(images[query_name][
-                                                                                      'filtered_matches']) < MIN_MATCHES
+                                                                                      'filtered_matches']) < N_MATCHES
                                                                            else images[query_name]['filtered_matches'])
         except:
             print_traceback(sys.exc_info())
