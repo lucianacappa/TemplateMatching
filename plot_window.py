@@ -65,6 +65,7 @@ class PlotWindow:
                 self.scale_up((x, y))
             else:
                 self.scale_down((x, y))
+            self.set_title(self._title)
 
     def _scale_plot(self):
         self._scaled_plot_image = cv2.resize(self._full_plot_image, (0, 0), fx=self.scale, fy=self.scale)
@@ -113,4 +114,4 @@ class PlotWindow:
 
     def set_title(self, title):
         self._title = title
-        cv2.setWindowTitle(PlotWindow.WINDOW_NAME, title)
+        cv2.setWindowTitle(PlotWindow.WINDOW_NAME, f'{title} (scale = {self.scale * 100.0:.1f}%)')

@@ -5,23 +5,42 @@ import traceback
 from timer import Timer
 
 
-# TODO: Parameterise
+DETECTORS = {
+    'ORB': cv2.ORB_create,
+    'SIFT': cv2.SIFT_create,
+    # 'SURF': cv2.SURF_create,  # TODO: Find SURF implementation.
+}
+
+# TODO: Does it make sense to parameterise this value?
 FLANN_KD = 2
 
-PARAMETER_SPECS = {
-    'detector': {'type': str, 'options': ['ORB', 'SIFT']},
-    'match_ratio_threshold': {'type': float, 'min': 0.01, 'max': 1.00, 'step': 0.01},
-    'min_matches': {'type': int, 'min': 1, 'max': 100, 'step': 1},
+ORB_PARAMETER_SPECS = {
+    'match_ratio_threshold': {'type': float, 'min': 0.01, 'max': 1.00, 'step': 0.01, 'default': 0.5},
+    'n_matches': {'type': int, 'min': 1, 'max': 100, 'step': 1, 'default': 10},
+    'nfeatures': {'type': int, 'nullable': True, 'min': 0, 'max': 100, 'step': 1, 'default': None},
+    'scaleFactor': {'type': float, 'nullable': True, 'min': 0.0, 'max': 100.0, 'step': 1, 'default': None},
+    'nlevels': {'type': float, 'nullable': True, 'min': 0.0, 'max': 100.0, 'step': 1, 'default': None},
+    'edgeThreshold': {'type': float, 'nullable': True, 'min': 0.0, 'max': 100.0, 'step': 1, 'default': None},
+    'firstLevel': {'type': float, 'nullable': True, 'min': 0.0, 'max': 100.0, 'step': 1, 'default': None},
+    'WTA_K': {'type': float, 'nullable': True, 'min': 0.0, 'max': 100.0, 'step': 1, 'default': None},
+    'scoreType': {'type': float, 'nullable': True, 'min': 0.0, 'max': 100.0, 'step': 1, 'default': None},
+    'patchSize': {'type': float, 'nullable': True, 'min': 0.0, 'max': 100.0, 'step': 1, 'default': None},
+    'fastThreshold': {'type': float, 'nullable': True, 'min': 0.0, 'max': 100.0, 'step': 1, 'default': None},
+}
+
+SIFT_PARAMETER_SPECS = {
+    'match_ratio_threshold': {'type': float, 'min': 0.01, 'max': 1.00, 'step': 0.01, 'default': 0.5},
+    'n_matches': {'type': int, 'min': 1, 'max': 100, 'step': 1, 'default': 10},
+    'nfeatures': {'type': int, 'nullable': True, 'min': 0.0, 'max': 100.0, 'step': 1, 'default': None},
+    'nOctaveLayers': {'type': int, 'nullable': True, 'min': 1, 'max': 100, 'step': 1, 'default': None},
+    'contrastThreshold': {'type': float, 'nullable': True, 'min': 0.0, 'max': 100.0, 'step': 1, 'default': None},
+    'edgeThreshold': {'type': float, 'nullable': True, 'min': 0.0, 'max': 100.0, 'step': 1, 'default': None},
+    'sigma': {'type': float, 'nullable': True, 'min': 0.0, 'max': 100.0, 'step': 1, 'default': None},
 }
 
 
-# TODO: Parameterize type
-def create_detector(detector: str):
-    if detector == 'ORB':
-        return cv2.ORB_create()  # TODO: play around with arguments to ORB
-    elif detector == 'SIFT':
-        return cv2.SIFT_create()  # TODO: play around with arguments to SIFT
-    # elif detector == 'SURF': return cv2.SURF_create()  # TODO: play around with arguments to SURF
+def create_detector(detector: str, detector_args: dict):
+    return DETECTORS[detector](**detector_args)
 
 
 def create_flann_matcher():
@@ -30,16 +49,16 @@ def create_flann_matcher():
     return cv2.FlannBasedMatcher(index_params, search_params)
 
 
-def filter_matches(all_matches, match_ratio_threshold: float, min_matches: int):
+def filter_matches(all_matches, match_ratio_threshold: float, n_matches: int):
     lowe = [pair for pair in all_matches if pair[0].distance < match_ratio_threshold * pair[1].distance]
-    return sorted(all_matches, key=lambda m: m[0].distance)[:min_matches] \
-        if len(lowe) < min_matches else lowe
+    return sorted(all_matches, key=lambda m: m[0].distance)[:n_matches] \
+        if len(lowe) < n_matches else lowe
 
 
-def plot(base, query, detector: str, match_ratio_threshold: float, min_matches: int):  # TODO: Add setting arguments
+def plot(base, query, detector: str, match_ratio_threshold: float, n_matches: int, **detector_args):
     timer = Timer()
     timer.start()
-    detector_object = create_detector(detector)
+    detector_object = create_detector(detector, detector_args)
     timer.mark(f'Detector {detector} creation')
     # TODO: second argument to detectAndCompute is the mask... might be worth trying later.
     base_kp, base_desc = detector_object.detectAndCompute(base, None)
@@ -52,7 +71,7 @@ def plot(base, query, detector: str, match_ratio_threshold: float, min_matches: 
     try:
         matches = flann.knnMatch(base_desc, query_desc, k=FLANN_KD) if len(query_kp) > 1 else []
         timer.mark('FLANN KNN matching')
-        filtered_matches = filter_matches(matches, match_ratio_threshold, min_matches)
+        filtered_matches = filter_matches(matches, match_ratio_threshold, n_matches)
         timer.mark('Match filtering')
         matches_image = plot_matches_and_outline(base, base_kp, query, query_kp, filtered_matches)
         timer.mark('Plotting')
@@ -88,6 +107,14 @@ def plot_matches_and_outline(base, base_kp, query, query_kp, matches: list[list[
     except:
         print_traceback(sys.exc_info())
     return result_image
+
+
+def plot_orb(base, query, match_ratio_threshold: float, n_matches: int, **detector_args):
+    return plot(base, query, 'ORB', match_ratio_threshold, n_matches, **detector_args)
+
+
+def plot_sift(base, query, match_ratio_threshold: float, n_matches: int, **detector_args):
+    return plot(base, query, 'SIFT', match_ratio_threshold, n_matches, **detector_args)
 
 
 def print_traceback(exc_info):

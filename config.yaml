@@ -4,38 +4,17 @@ query:
 scale: 0.5
 win_size: (800, 600)
 algorithms:
-    - MatchTemplate:
-        method:
-            - TM_CCOEFF:
-                n_matches: 1
-            - TM_CCOEFF_NORMED:
-                n_matches: 1
-            - TM_CCORR:
-                n_matches: 1
-            - TM_CCORR_NORMED:
-                n_matches: 1
-            - TM_SQDIFF:
-                n_matches: 1
-            - TM_SQDIFF_NORMED:
-                n_matches: 1
-    - FLANN:
-        detector:
-            - ORB:
-                nfeatures: null
-                scaleFactor: null
-                nlevels: null
-                edgeThreshold: null
-                firstLevel: null
-                WTA_K: null
-                scoreType: null
-                patchSize: null
-                fastThreshold: null
-            - SIFT:
-                nfeatures: null
-                nOctaveLayers: null
-                contrastThreshold: null
-                edgeThreshold: null
-                sigma: null
-        filter:
-            Lowe: 0.7
-            Top: 10
+    FLANN+ORB:
+        algorithm: 'FLANN+ORB'
+        match_ratio_threshold: 0.5
+        n_matches: 10
+    FLANN+SIFT:
+        algorithm: 'FLANN+SIFT'
+        match_ratio_threshold: 0.5
+        n_matches: 10
+    MatchTemplate:
+        algorithm: 'MatchTemplate'
+        method: 'TM_SQDIFF_NORMED'
+        filter_by: 'number'
+        match_ratio_threshold: 0.5
+        n_matches: 1

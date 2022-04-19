@@ -20,14 +20,16 @@ KEY_RIGHT_ARROW = 0x10000 * 0x27
 KEY_SPACE = 0x20
 KEY_UP_ARROW = 0x10000 * 0x26
 PLOT_FUNCTIONS = {
-    'FLANN': flann_matcher.plot,
+    'FLANN+ORB': flann_matcher.plot_orb,
+    'FLANN+SIFT': flann_matcher.plot_sift,
     'MatchTemplate': template_matcher.plot,
 }
 
 
 def create_controls_window(plot_window, base, query, query_index_ref, algorithm_specs, view_settings_ref):
     controls_window = ControlsWindow({
-        'FLANN': flann_matcher.PARAMETER_SPECS,
+        'FLANN+ORB': flann_matcher.ORB_PARAMETER_SPECS,
+        'FLANN+SIFT': flann_matcher.SIFT_PARAMETER_SPECS,
         'MatchTemplate': template_matcher.PARAMETER_SPECS,
     }, view_settings_ref)
     return controls_window
@@ -71,11 +73,7 @@ def main():
     query_index = {'query_index': 0}
     plot_window = PlotWindow()
     view_settings = {
-        'all': {
-            'FLANN': {'algorithm': 'FLANN', 'detector': 'SIFT', 'match_ratio_threshold': 0.5, 'min_matches': 10},
-            'MatchTemplate': {'algorithm': 'MatchTemplate', 'method': 'TM_SQDIFF_NORMED', 'n_matches': 1,
-                              'min_strength': 0.5},
-        },
+        'all': args['algorithms'],
     }
     view_settings['current'] = view_settings['all']['MatchTemplate']
     controls_window = create_controls_window(plot_window, base, query, query_index, args['algorithms'], view_settings)
@@ -84,7 +82,6 @@ def main():
 
 
 def plot(base, query, algorithm: str, **kwargs):
-    # print('plot: algorithm=', algorithm, ', kwargs:', kwargs)
     return PLOT_FUNCTIONS[algorithm](base, query, **kwargs)
 
 
